@@ -140,15 +140,19 @@ export function DayPage({ dateKey, records, units, onDateChange, onSave, onDelet
     }
   };
 
-  const saveAndCollapse = async (
-    t: EditorTarget,
-    fields: Record<string, string>,
-    confirm: boolean,
-  ): Promise<SaveResult> => {
-    const r = await onSave(t, fields, confirm);
-    if (r.ok) setExpanded(null);
-    return r;
-  };
+  // Esc 关闭弹窗；弹窗打开时锁定背景滚动
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExpanded(null);
+    };
+    window.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [expanded]);
 
   return (
     <div>
@@ -208,15 +212,14 @@ export function DayPage({ dateKey, records, units, onDateChange, onSave, onDelet
         {isFuture && <div className="future-banner" role="alert">不能选择未来日期。</div>}
       </div>
 
-      {/* 棋盘网格卡片 */}
-      <div className="board">
-        {TILES.map((t) => {
+      {/* 棋盘网格卡片：血糖占 2/3 宽，血压/体重在右列上下堆叠，其余卡片流式排列；点击弹窗填写 */}
+      {(() => {
+        const glucoseTile = TILES.find((t) => t.id === 'glucose')!;
+        const sideTiles = TILES.filter((t) => t.id === 'bp' || t.id === 'weight');
+        const restTiles = TILES.filter((t) => t.id !== 'glucose' && t.id !== 'bp' && t.id !== 'weight');
+        const renderTile = (t: TileDef) => {
           const done = tileDone(t);
           const Icon = t.icon;
-          const rowOfExpanded =
-            expanded && t.rows ? t.rows.find((r) => r.kind === expanded.kind && r.slot === expanded.slot) : undefined;
-          const singleExpanded =
-            expanded && t.single && t.single.kind === expanded.kind && t.single.slot === expanded.slot;
           return (
             <div key={t.id} className="tile" style={{ background: t.color }}>
               <div className="tile-head">
@@ -231,36 +234,15 @@ export function DayPage({ dateKey, records, units, onDateChange, onSave, onDelet
                 <div className="tile-rows">
                   {t.rows.map((r) => {
                     const s = summaryOf(r);
-                    const isOpen = rowOfExpanded?.slot === r.slot;
                     return (
-                      <div key={`${r.kind}:${r.slot}`} className="tile-row-wrap">
-                        <button
-                          className={s ? 'tile-row filled' : 'tile-row'}
-                          onClick={() =>
-                            setExpanded(
-                              isOpen
-                                ? null
-                                : { dateKey, kind: r.kind, slot: r.slot, entryId: null },
-                            )
-                          }
-                          aria-expanded={isOpen}
-                        >
-                          <span className="tile-row-label">{r.label}</span>
-                          <span className="tile-row-value">{s || '＋'}</span>
-                        </button>
-                        {isOpen && expanded && (
-                          <EntryForm
-                            target={expanded}
-                            records={records}
-                            units={units}
-                            variant="inline"
-                            onSave={saveAndCollapse}
-                            onDelete={onDelete}
-                            onSwitchTarget={setExpanded}
-                            onDone={() => setExpanded(null)}
-                          />
-                        )}
-                      </div>
+                      <button
+                        key={`${r.kind}:${r.slot}`}
+                        className={s ? 'tile-row filled' : 'tile-row'}
+                        onClick={() => setExpanded({ dateKey, kind: r.kind, slot: r.slot, entryId: null })}
+                      >
+                        <span className="tile-row-label">{r.label}</span>
+                        <span className="tile-row-value">{s || '＋'}</span>
+                      </button>
                     );
                   })}
                 </div>
@@ -268,41 +250,64 @@ export function DayPage({ dateKey, records, units, onDateChange, onSave, onDelet
 
               {t.single && (
                 <div className="tile-body">
-                  {!singleExpanded && (
-                    <button
-                      className="btn big tile-open"
-                      onClick={() => setExpanded({ dateKey, kind: t.single!.kind, slot: t.single!.slot, entryId: null })}
-                    >
-                      <IconPen size={26} />
-                      {summaryOf(t.single) || '点这里填写'}
-                    </button>
-                  )}
-                  {singleExpanded && expanded && (
-                    <EntryForm
-                      target={expanded}
-                      records={records}
-                      units={units}
-                      variant="inline"
-                      onSave={saveAndCollapse}
-                      onDelete={onDelete}
-                      onSwitchTarget={setExpanded}
-                      onDone={() => setExpanded(null)}
-                    />
-                  )}
+                  <button
+                    className="btn big tile-open"
+                    onClick={() => setExpanded({ dateKey, kind: t.single!.kind, slot: t.single!.slot, entryId: null })}
+                  >
+                    <IconPen size={26} />
+                    {summaryOf(t.single) || '点这里填写'}
+                  </button>
                 </div>
               )}
             </div>
           );
-        })}
-      </div>
+        };
+        return (
+          <>
+            <div className="board-top">
+              {renderTile(glucoseTile)}
+              <div className="board-side">{sideTiles.map(renderTile)}</div>
+            </div>
+            <div className="board">{restTiles.map(renderTile)}</div>
+          </>
+        );
+      })()}
 
       <p className="hint board-hint">
-        点卡片直接展开填写，不用跳转页面；血糖、血压、体重同一格可再记一次。月纪要在
+        点卡片弹出填写窗口，不用跳转页面；血糖、血压、体重同一格可再记一次。月纪要在
         <button className="btn small ghost" onClick={onGotoHistory}>
           回看 · 月表
         </button>
         中编辑。
       </p>
+
+      {/* 填写弹窗 */}
+      {expanded && !isFuture && (
+        <div
+          className="modal-overlay"
+          onClick={() => setExpanded(null)}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="填写记录"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <EntryForm
+              target={expanded}
+              records={records}
+              units={units}
+              variant="modal"
+              onSave={onSave}
+              onDelete={onDelete}
+              onSwitchTarget={setExpanded}
+              onDone={() => setExpanded(null)}
+              onClose={() => setExpanded(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

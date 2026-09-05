@@ -177,19 +177,7 @@ export default function App() {
         <div className="sync-status">本地版 · 数据仅存于此设备</div>
       </header>
       <main>
-        {editor ? (
-          <EntryForm
-            target={editor}
-            records={records}
-            units={units}
-            variant="page"
-            onSave={handleSave}
-            onDelete={handleDelete}
-            onSwitchTarget={setEditor}
-            onDone={closeEditor}
-            onClose={closeEditor}
-          />
-        ) : tab === 'fill' ? (
+        {tab === 'fill' ? (
           <DayPage
             dateKey={dateKey}
             records={records}
@@ -228,6 +216,30 @@ export default function App() {
           />
         )}
       </main>
+      {/* 编辑弹窗（历史明细、月纪要等入口） */}
+      {editor && (
+        <div className="modal-overlay" onClick={closeEditor}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="编辑记录"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <EntryForm
+              target={editor}
+              records={records}
+              units={units}
+              variant="modal"
+              onSave={handleSave}
+              onDelete={handleDelete}
+              onSwitchTarget={setEditor}
+              onDone={closeEditor}
+              onClose={closeEditor}
+            />
+          </div>
+        </div>
+      )}
       <nav className="tab-bar" aria-label="主导航">
         {(
           [

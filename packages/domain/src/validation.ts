@@ -50,7 +50,7 @@ export function formSpecFor(kind: RecordKind): FormSpecField[] {
       return [
         { key: 'text', label: '原表内容文字', type: 'text', required: true, multiline: true },
         { key: 'name', label: '胰岛素名称（可空）', type: 'text', required: false },
-        { key: 'occurredAt', label: '实际使用时间（可空）', type: 'time' },
+        { key: 'occurredAt', label: '实际使用时间', type: 'time' },
         { key: 'dose', label: '剂量（可空）', type: 'text', required: false },
         { key: 'doseUnit', label: '剂量单位（填写剂量时必填）', type: 'text', required: false },
       ];

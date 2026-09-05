@@ -218,6 +218,7 @@ label { display: block; font-size: 0.95rem; font-weight: 700; color: var(--ink);
 }
 @media (max-width: 430px) {
   .board { grid-template-columns: 1fr 1fr; gap: 0.55rem; }
+  .board-top { grid-template-columns: 1fr; gap: 0.55rem; }
   .tile { padding: 0.6rem; }
   .week-day { min-height: 62px; }
 }

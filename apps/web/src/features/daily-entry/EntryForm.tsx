@@ -16,7 +16,7 @@ type Props = {
   target: EditorTarget;
   records: LocalRecord[];
   units: Units;
-  variant: 'inline' | 'page';
+  variant: 'page' | 'modal';
   onSave: (target: EditorTarget, fields: Record<string, string>, confirmAbnormalBP: boolean) => Promise<SaveResult>;
   onSaveNext?: (target: EditorTarget, fields: Record<string, string>, confirmAbnormalBP: boolean) => Promise<SaveResult>;
   onDelete: (id: string) => Promise<void>;
@@ -322,7 +322,7 @@ export function EntryForm({
             保存并填下一项
           </button>
         )}
-        {variant === 'inline' && dirtyRef.current && <span className="badge warn">草稿，仅此设备</span>}
+        {variant === 'modal' && dirtyRef.current && <span className="badge warn">草稿，仅此设备</span>}
       </div>
 
       {pendingDelete && (

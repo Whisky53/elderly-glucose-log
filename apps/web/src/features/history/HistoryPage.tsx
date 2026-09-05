@@ -21,7 +21,7 @@ const KIND_LABELS: Record<string, string> = {
   water: '饮水',
   exercise: '运动',
   insulin: '胰岛素',
-  day_note: '一日纪要',
+  day_note: '日纪要',
   month_note: '本月纪要',
 };
 

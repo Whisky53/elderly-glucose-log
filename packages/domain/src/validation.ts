@@ -55,7 +55,7 @@ export function formSpecFor(kind: RecordKind): FormSpecField[] {
         { key: 'doseUnit', label: '剂量单位（填写剂量时必填）', type: 'text', required: false },
       ];
     case 'day_note':
-      return [{ key: 'text', label: '一日纪要', type: 'text', required: false, multiline: true }];
+      return [{ key: 'text', label: '日纪要', type: 'text', required: false, multiline: true }];
     case 'month_note':
       return [{ key: 'text', label: '本月纪要', type: 'text', required: false, multiline: true }];
   }
@@ -160,7 +160,7 @@ export function validateForm(
       break;
     }
     case 'day_note':
-      payload = { kind, text: text('text', false, '一日纪要') };
+      payload = { kind, text: text('text', false, '日纪要') };
       break;
     case 'month_note':
       payload = { kind, text: text('text', false, '本月纪要') };

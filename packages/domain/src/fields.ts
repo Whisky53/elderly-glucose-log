@@ -1,6 +1,6 @@
 import type { RecordKind } from '@gms/contracts';
 
-/** 分组顺序固定（PRD §4.1）：血糖、血压、体重、饮食与饮水、运动、胰岛素、一日纪要 */
+/** 分组顺序固定（PRD §4.1）：血糖、血压、体重、饮食与饮水、运动、胰岛素、日纪要 */
 export type GroupId =
   | 'glucose'
   | 'blood_pressure'
@@ -81,8 +81,8 @@ export const FIELD_GROUPS: GroupDef[] = [
   },
   {
     id: 'day_note',
-    label: '一日纪要',
-    slots: [{ kind: 'day_note', slot: 'daily', label: '一日纪要', multi: false }],
+    label: '日纪要',
+    slots: [{ kind: 'day_note', slot: 'daily', label: '日纪要', multi: false }],
   },
 ];
 

@@ -75,7 +75,7 @@ const TILES: TileDef[] = [
   { id: 'water', label: '饮水', icon: IconWater, color: '#E4F5F7', single: { kind: 'water', slot: 'daily', label: '当天累计' } },
   { id: 'exercise', label: '运动', icon: IconExercise, color: '#EFEDFB', single: { kind: 'exercise', slot: 'daily', label: '当日运动' } },
   { id: 'insulin', label: '胰岛素', icon: IconInsulin, color: '#FFF8E1', single: { kind: 'insulin', slot: 'daily', label: '当日记录' } },
-  { id: 'day_note', label: '一日纪要', icon: IconNote, color: '#F3F4F6', single: { kind: 'day_note', slot: 'daily', label: '一日纪要' } },
+  { id: 'day_note', label: '日纪要', icon: IconNote, color: '#F3F4F6', single: { kind: 'day_note', slot: 'daily', label: '日纪要' } },
 ];
 
 export function DayPage({ dateKey, records, units, onDateChange, onSave, onDelete, onGotoHistory }: Props) {

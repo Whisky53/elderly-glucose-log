@@ -215,8 +215,8 @@ export function DayPage({ dateKey, records, units, onDateChange, onSave, onDelet
       {/* 棋盘网格卡片：血糖占 2/3 宽，血压/体重在右列上下堆叠，其余卡片流式排列；点击弹窗填写 */}
       {(() => {
         const glucoseTile = TILES.find((t) => t.id === 'glucose')!;
-        const sideTiles = TILES.filter((t) => t.id === 'bp' || t.id === 'weight');
-        const restTiles = TILES.filter((t) => t.id !== 'glucose' && t.id !== 'bp' && t.id !== 'weight');
+        const sideTiles = TILES.filter((t) => t.id === 'bp' || t.id === 'weight' || t.id === 'insulin');
+        const restTiles = TILES.filter((t) => t.id !== 'glucose' && t.id !== 'bp' && t.id !== 'weight' && t.id !== 'insulin');
         const renderTile = (t: TileDef) => {
           const done = tileDone(t);
           const Icon = t.icon;
@@ -255,7 +255,7 @@ export function DayPage({ dateKey, records, units, onDateChange, onSave, onDelet
                     onClick={() => setExpanded({ dateKey, kind: t.single!.kind, slot: t.single!.slot, entryId: null })}
                   >
                     <IconPen size={26} />
-                    {summaryOf(t.single) || '点这里填写'}
+                    {summaryOf(t.single) || '填写'}
                   </button>
                 </div>
               )}

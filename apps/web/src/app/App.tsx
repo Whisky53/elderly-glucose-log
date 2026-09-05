@@ -1,23 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FieldError, LocalRecord, RecordKind } from '@gms/contracts';
-import { FIELD_GROUPS, isFutureDate, monthKeyOf, todayKey, validateForm } from '@gms/domain';
-import {
-  LOCAL_ACCOUNT,
-  clearAllLocal,
-  draftKeyFor,
-  listAllRecords,
-  saveRecordAndClearDraft,
-  softDeleteRecord,
-  uuid,
-} from '../data/local/repo';
+import { isFutureDate, monthKeyOf, todayKey, validateForm } from '@gms/domain';
+import { LOCAL_ACCOUNT, clearAllLocal, draftKeyFor, listAllRecords, saveRecordAndClearDraft, softDeleteRecord, uuid } from '../data/local/repo';
 import { buildFictionalSeed } from '../data/local/seed';
 import { DayPage } from '../features/daily-entry/DayPage';
-import { EntryEditor } from '../features/daily-entry/EntryEditor';
+import { EntryForm } from '../features/daily-entry/EntryForm';
 import { HistoryPage } from '../features/history/HistoryPage';
+import { TrendPage } from '../features/history/TrendPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
+import { IconPen, IconHistory, IconTrend, IconSettings } from '../components/Icons';
 
 export type Units = { glucose: string; weight: string; water: string };
-export type Tab = 'fill' | 'history' | 'settings';
+export type Tab = 'fill' | 'history' | 'trend' | 'settings';
 export type EditorTarget = { dateKey: string; kind: RecordKind; slot: string; entryId: string | null };
 
 export type SaveResult = { ok: true } | { ok: false; errors?: FieldError[]; hardFail?: boolean };
@@ -76,7 +70,7 @@ export default function App() {
     void refresh().then(() => window.scrollTo(0, scrollMemo.current));
   }, [refresh]);
 
-  /** 保存正式记录（本机持久化成功才提示“已保存到此设备”；失败保留内容不显示成功） */
+  /** 保存正式记录（本机持久化成功才提示；失败保留内容不显示成功） */
   const handleSave = useCallback(
     async (target: EditorTarget, fields: Record<string, string>, confirmAbnormalBP: boolean): Promise<SaveResult> => {
       if (target.kind !== 'month_note' && isFutureDate(target.dateKey)) {
@@ -87,10 +81,7 @@ export default function App() {
 
       const periodKey = target.kind === 'month_note' ? monthKeyOf(target.dateKey) : target.dateKey;
       const draftKey = draftKeyFor(periodKey, target.kind, target.slot, target.entryId);
-      const base =
-        target.entryId != null
-          ? (records ?? []).find((r) => r.id === target.entryId)
-          : undefined;
+      const base = target.entryId != null ? (records ?? []).find((r) => r.id === target.entryId) : undefined;
       const uniqueBase =
         !base && (target.kind === 'meal' || target.kind === 'water' || target.kind === 'day_note' || target.kind === 'month_note')
           ? (records ?? []).find(
@@ -159,26 +150,6 @@ export default function App() {
     [refresh, showToast],
   );
 
-  /** “保存并填下一项”：按当前组固定顺序进入下一空项，到组末返回概览 */
-  const handleSaveNext = useCallback(
-    async (target: EditorTarget, fields: Record<string, string>, confirmAbnormalBP: boolean): Promise<SaveResult> => {
-      const r = await handleSave(target, fields, confirmAbnormalBP);
-      if (!r.ok) return r;
-      const all = await listAllRecords();
-      const groupSlots = groupOrderAfter(target);
-      for (const s of groupSlots) {
-        const has = all.some((x) => x.kind === s.kind && x.slot === s.slot && x.periodKey === target.dateKey && !x.deletedAt);
-        if (!has) {
-          setEditor({ dateKey: target.dateKey, kind: s.kind, slot: s.slot, entryId: null });
-          return r;
-        }
-      }
-      setEditor(null);
-      return r;
-    },
-    [handleSave],
-  );
-
   const seedFictional = useCallback(async () => {
     const existing = await listAllRecords();
     if (existing.length > 0 && !window.confirm('本地已有数据，虚构示例将一并加入，确定继续？')) return;
@@ -203,26 +174,29 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>血糖记录</h1>
-        <div className="sync-status">本地版 · 数据仅存于此设备 · 云端同步待 S2 接入</div>
+        <div className="sync-status">本地版 · 数据仅存于此设备</div>
       </header>
       <main>
         {editor ? (
-          <EntryEditor
+          <EntryForm
             target={editor}
             records={records}
             units={units}
+            variant="page"
             onSave={handleSave}
-            onSaveNext={handleSaveNext}
             onDelete={handleDelete}
-            onClose={closeEditor}
             onSwitchTarget={setEditor}
+            onDone={closeEditor}
+            onClose={closeEditor}
           />
         ) : tab === 'fill' ? (
           <DayPage
             dateKey={dateKey}
             records={records}
+            units={units}
             onDateChange={setDateKey}
-            onOpen={openEditor}
+            onSave={handleSave}
+            onDelete={handleDelete}
             onGotoHistory={() => setTab('history')}
           />
         ) : tab === 'history' ? (
@@ -237,6 +211,8 @@ export default function App() {
             onEditMonthNote={() => openEditor(monthNoteTarget)}
             onRestore={handleRestore}
           />
+        ) : tab === 'trend' ? (
+          <TrendPage records={records} />
         ) : (
           <SettingsPage
             fontSize={fontSize}
@@ -255,13 +231,15 @@ export default function App() {
       <nav className="tab-bar" aria-label="主导航">
         {(
           [
-            ['fill', '填写'],
-            ['history', '回看'],
-            ['settings', '设置'],
+            ['fill', '填写', IconPen],
+            ['history', '回看', IconHistory],
+            ['trend', '趋势', IconTrend],
+            ['settings', '设置', IconSettings],
           ] as const
-        ).map(([id, label]) => (
+        ).map(([id, label, Icon]) => (
           <button key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
-            {label}
+            <Icon size={30} />
+            <span>{label}</span>
           </button>
         ))}
       </nav>
@@ -273,15 +251,3 @@ export default function App() {
     </div>
   );
 }
-
-function groupOrderAfter(target: EditorTarget): Array<{ kind: RecordKind; slot: string }> {
-  // 按组固定顺序取当前项之后的空项（同一组内）
-  const order: Array<{ kind: RecordKind; slot: string }> = [];
-  const current = GROUP_ORDER_CACHE.findIndex((g) => g.kind === target.kind && g.slot === target.slot);
-  for (let i = current + 1; i < GROUP_ORDER_CACHE.length; i++) order.push(GROUP_ORDER_CACHE[i]!);
-  return order;
-}
-
-const GROUP_ORDER_CACHE: Array<{ kind: RecordKind; slot: string }> = FIELD_GROUPS.flatMap((g) =>
-  g.slots.map((s) => ({ kind: s.kind, slot: s.slot })),
-);

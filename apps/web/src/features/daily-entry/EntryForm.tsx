@@ -2,26 +2,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FieldError, LocalRecord, RecordKind } from '@gms/contracts';
 import {
   formatDateCn,
-  findGroupOfKind,
   findSlotDef,
   formFieldsFromPayload,
   formSpecFor,
   monthKeyOf,
-  weekdayCn,
 } from '@gms/domain';
 import type { EditorTarget, SaveResult, Units } from '../../app/App';
 import { deleteDraft, draftKeyFor, getDraft, putDraft } from '../../data/local/repo';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { IconCheck } from '../../components/Icons';
 
 type Props = {
   target: EditorTarget;
   records: LocalRecord[];
   units: Units;
+  variant: 'inline' | 'page';
   onSave: (target: EditorTarget, fields: Record<string, string>, confirmAbnormalBP: boolean) => Promise<SaveResult>;
-  onSaveNext: (target: EditorTarget, fields: Record<string, string>, confirmAbnormalBP: boolean) => Promise<SaveResult>;
+  onSaveNext?: (target: EditorTarget, fields: Record<string, string>, confirmAbnormalBP: boolean) => Promise<SaveResult>;
   onDelete: (id: string) => Promise<void>;
-  onClose: () => void;
-  onSwitchTarget: (t: EditorTarget) => void;
+  onSwitchTarget?: (t: EditorTarget) => void;
+  /** 保存成功后回调：inline 收起输入区，page 关闭编辑页 */
+  onDone: () => void;
+  onClose?: () => void;
 };
 
 const UNIT_KEY_BY_KIND: Partial<Record<RecordKind, keyof Units>> = {
@@ -30,13 +32,23 @@ const UNIT_KEY_BY_KIND: Partial<Record<RecordKind, keyof Units>> = {
   water: 'water',
 };
 
-export function EntryEditor({ target, records, units, onSave, onSaveNext, onDelete, onClose, onSwitchTarget }: Props) {
+export function EntryForm({
+  target,
+  records,
+  units,
+  variant,
+  onSave,
+  onSaveNext,
+  onDelete,
+  onSwitchTarget,
+  onDone,
+  onClose,
+}: Props) {
   const slotDef = findSlotDef(target.kind, target.slot);
-  const group = findGroupOfKind(target.kind);
   const periodKey = target.kind === 'month_note' ? monthKeyOf(target.dateKey) : target.dateKey;
   const dKey = draftKeyFor(periodKey, target.kind, target.slot, target.entryId);
 
-  const targetRecord = useMemo(
+  const editingRecord = useMemo(
     () => (target.entryId != null ? records.find((r) => r.id === target.entryId) : undefined),
     [records, target.entryId],
   );
@@ -50,16 +62,16 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
   );
 
   const initialFields = useMemo(() => {
-    if (targetRecord && !targetRecord.deletedAt) {
-      const f = formFieldsFromPayload(targetRecord.payload);
-      if (targetRecord.occurredAt) f['occurredAt'] = targetRecord.occurredAt.slice(0, 16);
+    if (editingRecord && !editingRecord.deletedAt) {
+      const f = formFieldsFromPayload(editingRecord.payload);
+      if (editingRecord.occurredAt) f['occurredAt'] = editingRecord.occurredAt.slice(0, 16);
       return f;
     }
     const f: Record<string, string> = {};
     const unitKey = UNIT_KEY_BY_KIND[target.kind];
     if (unitKey) {
-      const spec = formSpecFor(target.kind).find((s) => s.key === 'unit');
-      if (spec) f['unit'] = units[unitKey];
+      const hasUnit = formSpecFor(target.kind).some((s) => s.key === 'unit');
+      if (hasUnit) f['unit'] = units[unitKey];
     }
     return f;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -68,12 +80,9 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
   const [fields, setFields] = useState<Record<string, string>>(initialFields);
   const [errors, setErrors] = useState<FieldError[]>([]);
   const [confirmAbnormalBP, setConfirmAbnormalBP] = useState(false);
-  const [isDraft, setIsDraft] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [escapeAsk, setEscapeAsk] = useState(false);
   const [saving, setSaving] = useState(false);
   const dirtyRef = useRef(false);
-  const firstInputRef = useRef<HTMLInputElement>(null);
   const initialJson = JSON.stringify(initialFields);
 
   // 载入既有草稿（刷新恢复）
@@ -82,7 +91,6 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
     void getDraft(dKey).then((d) => {
       if (alive && d && !dirtyRef.current) {
         setFields((prev) => ({ ...d.fields, ...prev }));
-        setIsDraft(true);
       }
     });
     return () => {
@@ -91,7 +99,7 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 草稿自动保存（输入即存本机，标为“草稿，仅此设备”）
+  // 草稿自动保存
   useEffect(() => {
     if (JSON.stringify(fields) === initialJson && !dirtyRef.current) return;
     dirtyRef.current = true;
@@ -105,19 +113,10 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
         entryId: target.entryId,
         fields,
         updatedAt: new Date().toISOString(),
-      })
-        .then(() => setIsDraft(true))
-        .catch(() => {
-          /* 草稿写入失败不打断输入；正式保存时仍有原子写兜底 */
-        });
+      }).catch(() => undefined);
     }, 400);
     return () => window.clearTimeout(timer);
   }, [fields, dKey, initialJson, periodKey, target.entryId, target.kind, target.slot]);
-
-  // 直接聚焦数值输入
-  useEffect(() => {
-    firstInputRef.current?.focus();
-  }, []);
 
   const setValue = (key: string, value: string) => {
     setFields((prev) => ({ ...prev, [key]: value }));
@@ -127,7 +126,7 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
   const doSave = useCallback(
     async (andNext: boolean) => {
       setSaving(true);
-      const r = andNext
+      const r = andNext && onSaveNext
         ? await onSaveNext(target, fields, confirmAbnormalBP)
         : await onSave(target, fields, confirmAbnormalBP);
       setSaving(false);
@@ -135,37 +134,25 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
         setErrors(r.errors ?? []);
         return;
       }
+      dirtyRef.current = false;
       void deleteDraft(dKey).catch(() => undefined);
-      if (!andNext) onClose();
+      onDone();
     },
-    [confirmAbnormalBP, dKey, fields, onClose, onSave, onSaveNext, target],
+    [confirmAbnormalBP, dKey, fields, onDone, onSave, onSaveNext, target],
   );
-
-  // 桌面：Escape 退出——未修改直接关闭，有修改先询问
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !confirmDeleteId) {
-        if (dirtyRef.current) setEscapeAsk(true);
-        else onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [confirmDeleteId, onClose]);
 
   const pendingDelete = confirmDeleteId != null ? records.find((r) => r.id === confirmDeleteId) : undefined;
   const spec = formSpecFor(target.kind);
-  const title = `${formatDateCn(target.dateKey)} · ${slotDef?.label ?? target.slot}`;
+  const formError = errors.find((e) => e.field === '__form');
 
   const errorFor = (field: string) => errors.find((e) => e.field === field);
-  const formError = errors.find((e) => e.field === '__form');
 
   const renderField = (f: (typeof spec)[number]) => {
     const err = errorFor(f.key);
-    const common = { id: `f-${f.key}`, 'aria-invalid': err ? true : undefined } as const;
+    const common = { id: `f-${variant}-${target.kind}-${target.slot}-${f.key}`, 'aria-invalid': err ? true : undefined } as const;
     if (f.type === 'select') {
       return (
-        <div key={f.key}>
+        <div key={f.key} className="field">
           <label htmlFor={common.id}>{f.label}</label>
           <select {...common} value={fields[f.key] ?? ''} onChange={(e) => setValue(f.key, e.target.value)}>
             {f.options.map((o) => (
@@ -180,25 +167,19 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
     }
     if (f.type === 'time') {
       return (
-        <div key={f.key}>
+        <div key={f.key} className="field">
           <label htmlFor={common.id}>{f.label}</label>
-          <input
-            {...common}
-            type="datetime-local"
-            value={fields[f.key] ?? ''}
-            onChange={(e) => setValue(f.key, e.target.value)}
-          />
+          <input {...common} type="datetime-local" value={fields[f.key] ?? ''} onChange={(e) => setValue(f.key, e.target.value)} />
           {err && <div className="field-error">{err.message}</div>}
         </div>
       );
     }
     if (f.type === 'decimal') {
       return (
-        <div key={f.key}>
+        <div key={f.key} className="field">
           <label htmlFor={common.id}>{f.label}</label>
           <input
             {...common}
-            ref={f.key === 'value' || f.key === 'systolic' ? firstInputRef : undefined}
             type="text"
             inputMode="decimal"
             value={fields[f.key] ?? ''}
@@ -216,21 +197,17 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
     }
     if (f.multiline) {
       return (
-        <div key={f.key}>
+        <div key={f.key} className="field">
           <label htmlFor={common.id}>
             {f.label} <span className="hint">（{(fields[f.key] ?? '').length}/4000）</span>
           </label>
-          <textarea
-            {...common}
-            value={fields[f.key] ?? ''}
-            onChange={(e) => setValue(f.key, e.target.value)}
-          />
+          <textarea {...common} value={fields[f.key] ?? ''} onChange={(e) => setValue(f.key, e.target.value)} />
           {err && <div className="field-error">{err.message}</div>}
         </div>
       );
     }
     return (
-      <div key={f.key}>
+      <div key={f.key} className="field">
         <label htmlFor={common.id}>{f.label}</label>
         <input {...common} type="text" value={fields[f.key] ?? ''} onChange={(e) => setValue(f.key, e.target.value)} />
         {err && <div className="field-error">{err.message}</div>}
@@ -251,53 +228,59 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
       case 'exercise':
       case 'insulin':
       case 'day_note':
-        return p.text.length > 40 ? `${p.text.slice(0, 40)}…` : p.text;
+        return p.text.length > 60 ? `${p.text.slice(0, 60)}…` : p.text;
       case 'water':
-        return `${p.total} ${p.unit}`;
+        return p.total === '0' ? `已记录 0 ${p.unit}` : `${p.total} ${p.unit}`;
       default:
         return '已记录';
     }
   };
 
+  const showList = variant === 'page' || slotRecords.filter((r) => !r.deletedAt).length > 0;
+
   return (
-    <div className="card">
-      <div className="editor-head">
-        <button className="btn ghost" onClick={() => (dirtyRef.current ? setEscapeAsk(true) : onClose())} aria-label="返回">
-          ‹ 返回
-        </button>
-        <span className="editor-title">
-          {target.kind === 'month_note' ? `${monthKeyOf(target.dateKey)} · 本月纪要` : `${title} ${target.dateKey === periodKey ? weekdayCn(target.dateKey) : ''}`}
-        </span>
-        {isDraft && <span className="badge warn">草稿，仅此设备</span>}
-      </div>
-      {group && <div className="hint">所属分组：{group.label}</div>}
+    <div className="entry-form">
+      {variant === 'page' && (
+        <div className="editor-head">
+          <button className="btn ghost" onClick={onClose} aria-label="返回">
+            ‹ 返回
+          </button>
+          <span className="editor-title">
+            {target.kind === 'month_note'
+              ? `${monthKeyOf(target.dateKey)} · 本月纪要`
+              : `${formatDateCn(target.dateKey)} · ${slotDef?.label ?? target.slot}`}
+          </span>
+        </div>
+      )}
       {formError && <div className="field-error" role="alert">{formError.message}</div>}
 
-      {slotDef?.multi && (
+      {slotDef?.multi && showList && (
         <div className="entries-list">
-          <h3>本时点已有记录（{slotRecords.filter((r) => !r.deletedAt).length} 条）</h3>
-          {slotRecords.length === 0 && <div className="hint">暂无记录。</div>}
+          {variant === 'page' && <h3>本时点已有记录（{slotRecords.filter((r) => !r.deletedAt).length} 条）</h3>}
           {slotRecords.map((r) => (
             <div key={r.id} className={r.deletedAt ? 'entry-item deleted' : 'entry-item'}>
               <div>
-                <div className="detail-main">{renderEntryValue(r)}</div>
-                <div className="detail-meta">
-                  版本 v{r.version}
+                <div className="entry-value">{renderEntryValue(r)}</div>
+                <div className="entry-meta">
+                  v{r.version}
                   {r.occurredAt ? ` · ${r.occurredAt.slice(5, 16).replace('T', ' ')}` : ' · 时间未记录'}
                   {r.deletedAt ? ' · 已删除' : ''}
                 </div>
               </div>
               {!r.deletedAt && (
                 <div className="entry-actions">
-                  <button className="btn secondary" onClick={() => onOpenEntry(r.id)}>
-                    修改
+                  <button
+                    className="btn small"
+                    onClick={() => onSwitchTarget?.({ ...target, entryId: r.id })}
+                  >
+                    {target.entryId === r.id ? '正在修改' : '修改'}
                   </button>
-                  {!targetRecord && (
-                    <button className="btn secondary" onClick={() => onNewEntry()}>
+                  {variant === 'page' && !editingRecord && (
+                    <button className="btn small secondary" onClick={() => onSwitchTarget?.({ ...target, entryId: null })}>
                       再记一次
                     </button>
                   )}
-                  <button className="btn danger" onClick={() => setConfirmDeleteId(r.id)}>
+                  <button className="btn small danger" onClick={() => setConfirmDeleteId(r.id)}>
                     删除
                   </button>
                 </div>
@@ -307,8 +290,8 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
         </div>
       )}
 
-      {!targetRecord && slotDef?.multi && slotRecords.some((r) => !r.deletedAt) && (
-        <h3>新记录</h3>
+      {!editingRecord && slotDef?.multi && slotRecords.some((r) => !r.deletedAt) && (
+        <div className="new-entry-label">{variant === 'page' ? '再记一条' : '记一笔'}</div>
       )}
 
       {spec.map(renderField)}
@@ -316,7 +299,7 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
       {target.kind === 'blood_pressure' && errorFor('diastolic')?.message.includes('确认') && (
         <div className="checkline">
           <input
-            id="bp-confirm"
+            id={`bp-confirm-${variant}-${target.slot}`}
             type="checkbox"
             checked={confirmAbnormalBP}
             onChange={(e) => {
@@ -324,21 +307,23 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
               setErrors((prev) => prev.filter((x) => x.field !== 'diastolic'));
             }}
           />
-          <label htmlFor="bp-confirm" style={{ margin: 0 }}>
+          <label htmlFor={`bp-confirm-${variant}-${target.slot}`} style={{ margin: 0 }}>
             数值正确（收缩压小于舒张压），确认保存
           </label>
         </div>
       )}
 
       <div className="editor-actions">
-        <button className="btn" disabled={saving} onClick={() => void doSave(false)}>
+        <button className="btn big" disabled={saving} onClick={() => void doSave(false)}>
           保存
         </button>
-        <button className="btn secondary" disabled={saving} onClick={() => void doSave(true)}>
-          保存并填下一项
-        </button>
+        {variant === 'page' && onSaveNext && (
+          <button className="btn big secondary" disabled={saving} onClick={() => void doSave(true)}>
+            保存并填下一项
+          </button>
+        )}
+        {variant === 'inline' && dirtyRef.current && <span className="badge warn">草稿，仅此设备</span>}
       </div>
-      <p className="hint">保存后返回原位置；草稿仅存本机，明确点击保存才进入待同步记录。</p>
 
       {pendingDelete && (
         <ConfirmDialog
@@ -348,33 +333,21 @@ export function EntryEditor({ target, records, units, onSave, onSaveNext, onDele
           onConfirm={() => {
             const id = confirmDeleteId!;
             setConfirmDeleteId(null);
+            if (target.entryId === id) onSwitchTarget?.({ ...target, entryId: null });
             void onDelete(id);
-            if (target.entryId === id) onClose();
           }}
           onCancel={() => setConfirmDeleteId(null)}
         />
       )}
-      {escapeAsk && (
-        <ConfirmDialog
-          title="有未保存修改"
-          message="返回将保留草稿（仅此设备），下次打开可恢复。"
-          confirmLabel="保留草稿并返回"
-          cancelLabel="继续填写"
-          onConfirm={() => {
-            setEscapeAsk(false);
-            onClose();
-          }}
-          onCancel={() => setEscapeAsk(false)}
-        />
-      )}
     </div>
   );
+}
 
-  function onOpenEntry(id: string) {
-    // 通过 URL 不适用（单页状态导航）；直接替换编辑目标
-    window.dispatchEvent(new CustomEvent('gms-open-entry', { detail: { ...target, entryId: id } }));
-  }
-  function onNewEntry() {
-    window.dispatchEvent(new CustomEvent('gms-open-entry', { detail: { ...target, entryId: null } }));
-  }
+/** 大号完成对勾（卡片右上角状态） */
+export function DoneCheck() {
+  return (
+    <span className="done-check" aria-label="已记录">
+      <IconCheck size={34} />
+    </span>
+  );
 }

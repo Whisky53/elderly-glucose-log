@@ -1,249 +1,313 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { LocalRecord, RecordKind } from '@gms/contracts';
-import {
-  FIELD_GROUPS,
-  addDays,
-  formatDateCn,
-  isFutureDate,
-  isValidDateKey,
-  todayKey,
-  weekdayCn,
-} from '@gms/domain';
-import type { EditorTarget } from '../../app/App';
+import { GLUCOSE_SLOTS, addDays, formatDateCn, isFutureDate, isValidDateKey, todayKey } from '@gms/domain';
+import type { EditorTarget, SaveResult, Units } from '../../app/App';
 import { recordsOfDate } from '../../data/local/repo';
+import { EntryForm, DoneCheck } from './EntryForm';
+import {
+  IconGlucose,
+  IconBloodPressure,
+  IconWeight,
+  IconMeal,
+  IconWater,
+  IconExercise,
+  IconInsulin,
+  IconNote,
+  IconPen,
+} from '../../components/Icons';
 
 type Props = {
   dateKey: string;
   records: LocalRecord[];
+  units: Units;
   onDateChange: (d: string) => void;
-  onOpen: (t: EditorTarget) => void;
+  onSave: (t: EditorTarget, fields: Record<string, string>, confirm: boolean) => Promise<SaveResult>;
+  onDelete: (id: string) => Promise<void>;
   onGotoHistory: () => void;
 };
 
-type SlotSummary = { text: string; count: number; hasDraft: boolean; flashKey?: string };
+type SlotRow = { kind: RecordKind; slot: string; label: string };
 
-export function DayPage({ dateKey, records, onDateChange, onOpen, onGotoHistory }: Props) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [isWide, setIsWide] = useState(() => window.matchMedia('(min-width: 768px)').matches);
-  const [lastSavedKey, setLastSavedKey] = useState<string | null>(null);
+type TileDef = {
+  id: string;
+  label: string;
+  icon: (p: { size?: number }) => React.ReactElement;
+  color: string;
+  /** 多时点卡片：逐行展开；否则整卡一个表单 */
+  rows?: SlotRow[];
+  single?: SlotRow;
+};
 
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)');
-    const fn = (e: MediaQueryListEvent) => setIsWide(e.matches);
-    mq.addEventListener('change', fn);
-    return () => mq.removeEventListener('change', fn);
-  }, []);
+const TILES: TileDef[] = [
+  {
+    id: 'glucose',
+    label: '血糖',
+    icon: IconGlucose,
+    color: '#E8F1FF',
+    rows: [
+      ...GLUCOSE_SLOTS.map((s) => ({ kind: 'glucose' as RecordKind, slot: s.slot, label: s.label })),
+      { kind: 'glucose', slot: 'temporary', label: '临时测量' },
+    ],
+  },
+  {
+    id: 'bp',
+    label: '血压',
+    icon: IconBloodPressure,
+    color: '#E7F6EC',
+    rows: [
+      { kind: 'blood_pressure', slot: 'fasting', label: '空腹' },
+      { kind: 'blood_pressure', slot: 'bedtime', label: '睡前' },
+    ],
+  },
+  {
+    id: 'weight',
+    label: '体重',
+    icon: IconWeight,
+    color: '#FFF1E0',
+    rows: [
+      { kind: 'weight', slot: 'morning', label: '早' },
+      { kind: 'weight', slot: 'evening', label: '晚' },
+    ],
+  },
+  { id: 'meal-b', label: '早餐', icon: IconMeal, color: '#FDEFF2', single: { kind: 'meal', slot: 'breakfast', label: '早餐' } },
+  { id: 'meal-l', label: '午餐', icon: IconMeal, color: '#FDEFF2', single: { kind: 'meal', slot: 'lunch', label: '午餐' } },
+  { id: 'meal-d', label: '晚餐', icon: IconMeal, color: '#FDEFF2', single: { kind: 'meal', slot: 'dinner', label: '晚餐' } },
+  { id: 'water', label: '饮水', icon: IconWater, color: '#E4F5F7', single: { kind: 'water', slot: 'daily', label: '当天累计' } },
+  { id: 'exercise', label: '运动', icon: IconExercise, color: '#EFEDFB', single: { kind: 'exercise', slot: 'daily', label: '当日运动' } },
+  { id: 'insulin', label: '胰岛素', icon: IconInsulin, color: '#FFF8E1', single: { kind: 'insulin', slot: 'daily', label: '当日记录' } },
+  { id: 'day_note', label: '一日纪要', icon: IconNote, color: '#F3F4F6', single: { kind: 'day_note', slot: 'daily', label: '一日纪要' } },
+];
+
+export function DayPage({ dateKey, records, units, onDateChange, onSave, onDelete, onGotoHistory }: Props) {
+  const [weekAnchor, setWeekAnchor] = useState(todayKey());
+  const [expanded, setExpanded] = useState<EditorTarget | null>(null);
+  const today = todayKey();
+  const isFuture = isFutureDate(dateKey);
 
   const dayRecords = useMemo(() => recordsOfDate(records, dateKey), [records, dateKey]);
-  const isFuture = isFutureDate(dateKey);
-  const isToday = dateKey === todayKey();
-  const isBackfill = dateKey < todayKey();
 
-  const summarize = (kind: RecordKind, slot: string): SlotSummary => {
-    const list = dayRecords.filter((r) => r.kind === kind && r.slot === slot);
-    const active = list.filter((r) => !r.deletedAt);
-    // 草稿标记由编辑页负责；此处只展示已保存内容
-    if (active.length === 0) {
-      if (list.some((r) => r.deletedAt)) return { text: '已删除', count: 0, hasDraft: false };
-      return { text: '', count: 0, hasDraft: false };
-    }
-    const latest = active.reduce((a, b) => (a.updatedAt > b.updatedAt ? a : b));
+  // 展开状态不跨日期残留
+  useEffect(() => setExpanded(null), [dateKey]);
+
+  const weekDays = useMemo(() => {
+    const base = new Date(weekAnchor + 'T12:00:00');
+    const dow = base.getDay();
+    const monday = addDays(weekAnchor, dow === 0 ? -6 : 1 - dow);
+    return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  }, [weekAnchor]);
+
+  const activeOf = (kind: RecordKind, slot: string) =>
+    dayRecords.filter((r) => r.kind === kind && r.slot === slot && !r.deletedAt);
+
+  const summaryOf = (row: SlotRow): string => {
+    const list = activeOf(row.kind, row.slot);
+    if (list.length === 0) return '';
+    const latest = list.reduce((a, b) => (a.updatedAt > b.updatedAt ? a : b));
     const p = latest.payload;
-    let text: string;
     switch (p.kind) {
       case 'glucose':
-        text = `${p.value} ${p.unit}`;
-        break;
+        return `${p.value} ${p.unit}${list.length > 1 ? `（${list.length}条）` : ''}`;
       case 'blood_pressure':
-        text = `${p.systolic}/${p.diastolic} ${p.unit}`;
-        break;
+        return `${p.systolic}/${p.diastolic}${list.length > 1 ? `（${list.length}条）` : ''}`;
       case 'weight':
-        text = `${p.value} ${p.unit}`;
-        break;
+        return `${p.value} ${p.unit}`;
       case 'meal':
-        text = p.text.length > 14 ? `${p.text.slice(0, 14)}…` : p.text;
-        break;
+        return p.text.length > 12 ? `${p.text.slice(0, 12)}…` : p.text;
       case 'water':
-        text = p.total === '0' ? `已记录 0 ${p.unit}` : `${p.total} ${p.unit}`;
-        break;
+        return p.total === '0' ? `已记录 0 ${p.unit}` : `${p.total} ${p.unit}`;
       case 'exercise':
-        text = p.durationMinutes != null ? `${p.text.slice(0, 10)}${p.text.length > 10 ? '…' : ''} ${p.durationMinutes}分钟` : p.text.slice(0, 16);
-        break;
+        return p.durationMinutes != null ? `${p.durationMinutes}分钟` : p.text.slice(0, 10);
       case 'insulin':
-        text = p.text.length > 16 ? `${p.text.slice(0, 16)}…` : p.text;
-        break;
+        return p.text.length > 12 ? `${p.text.slice(0, 12)}…` : p.text;
       case 'day_note':
-        text = p.text.length > 16 ? `${p.text.slice(0, 16)}…` : p.text;
-        break;
+        return p.text.length > 12 ? `${p.text.slice(0, 12)}…` : p.text;
       default:
-        text = '已记录';
+        return '已记录';
     }
-    return { text, count: active.length, hasDraft: false, flashKey: latest.id };
   };
 
-  const groupSummary = (groupId: string): string => {
-    const group = FIELD_GROUPS.find((g) => g.id === groupId)!;
-    const filled = group.slots.filter((s) => summarize(s.kind, s.slot).count > 0).length;
-    return filled === 0 ? '未记录' : `已记录 ${filled} 项`;
+  const tileDone = (t: TileDef): boolean => {
+    if (t.single) return activeOf(t.single.kind, t.single.slot).length > 0;
+    return (t.rows ?? []).every((r) => activeOf(r.kind, r.slot).length > 0);
   };
 
-  const toggleGroup = (id: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const shiftDate = (delta: number) => {
-    const next = addDays(dateKey, delta);
-    if (isFutureDate(next)) return;
-    onDateChange(next);
-  };
+  const shiftWeek = (delta: number) => setWeekAnchor((w) => addDays(w, delta * 7));
 
   const pickDate = (value: string) => {
-    if (isValidDateKey(value) && !isFutureDate(value)) onDateChange(value);
+    if (isValidDateKey(value) && !isFutureDate(value)) {
+      onDateChange(value);
+      setWeekAnchor(value);
+    }
   };
 
-  const openSlot = (kind: RecordKind, slot: string) => {
-    setLastSavedKey(null);
-    onOpen({ dateKey, kind, slot, entryId: null });
+  const saveAndCollapse = async (
+    t: EditorTarget,
+    fields: Record<string, string>,
+    confirm: boolean,
+  ): Promise<SaveResult> => {
+    const r = await onSave(t, fields, confirm);
+    if (r.ok) setExpanded(null);
+    return r;
   };
 
   return (
     <div>
-      <div className="date-nav">
-        <button className="btn ghost" onClick={() => shiftDate(-1)} aria-label="上一天">
-          ‹
-        </button>
-        <div className="date-title">
-          {isToday ? `今天 ${formatDateCn(dateKey)}` : formatDateCn(dateKey)} {weekdayCn(dateKey)}
-        </div>
-        <button className="btn ghost" onClick={() => shiftDate(1)} disabled={isToday} aria-label="下一天">
-          ›
-        </button>
-        <input type="date" value={dateKey} max={todayKey()} onChange={(e) => pickDate(e.target.value)} aria-label="选择日期" />
-        {!isToday && (
-          <button className="btn secondary" onClick={() => onDateChange(todayKey())}>
-            回今天
+      {/* 周横向日期选择栏 */}
+      <div className="week-bar card">
+        <div className="week-head">
+          <button className="btn ghost week-nav" onClick={() => shiftWeek(-1)} aria-label="上一周">
+            ‹
           </button>
+          <div className="week-month">{formatDateCn(dateKey)}</div>
+          <button className="btn ghost week-nav" onClick={() => shiftWeek(1)} aria-label="下一周">
+            ›
+          </button>
+          <input
+            type="date"
+            value={dateKey}
+            max={today}
+            onChange={(e) => pickDate(e.target.value)}
+            className="week-date-input"
+            aria-label="选择日期"
+          />
+        </div>
+        <div className="week-days">
+          {weekDays.map((d) => {
+            const selected = d === dateKey;
+            const isToday = d === today;
+            return (
+              <button
+                key={d}
+                className={selected ? 'week-day selected' : isToday ? 'week-day today' : 'week-day'}
+                onClick={() => {
+                  onDateChange(d);
+                  setWeekAnchor(d);
+                }}
+              >
+                <span className="wd-label">{weekdayShort(d)}</span>
+                <span className="wd-num">{Number(d.slice(8, 10))}</span>
+                {isToday && <span className="wd-today">今</span>}
+              </button>
+            );
+          })}
+        </div>
+        {dateKey !== today && !isFuture && (
+          <div className="backfill-banner" role="status">
+            <span>正在补记：{dateKey}</span>
+            <button
+              className="btn small secondary"
+              onClick={() => {
+                onDateChange(today);
+                setWeekAnchor(today);
+              }}
+            >
+              回今天
+            </button>
+          </div>
         )}
+        {isFuture && <div className="future-banner" role="alert">不能选择未来日期。</div>}
       </div>
 
-      {isBackfill && (
-        <div className="backfill-banner" role="status">
-          <span>正在补记：{dateKey}（保存后不会自动切回今天）</span>
-          <button className="btn ghost" onClick={() => onDateChange(todayKey())}>
-            回今天
-          </button>
-        </div>
-      )}
-      {isFuture && <div className="future-banner" role="alert">不能选择未来日期，请返回今天或过去日期。</div>}
-
-      {isWide ? (
-        <table className="day-table">
-          <thead>
-            <tr>
-              <th scope="col">项目</th>
-              <th scope="col">时点</th>
-              <th scope="col">已记录内容</th>
-              <th scope="col">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {FIELD_GROUPS.map((g) => (
-              <GroupRows
-                key={g.id}
-                group={g}
-                summarize={summarize}
-                onOpen={openSlot}
-                wide
-              />
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        FIELD_GROUPS.map((g) => {
-          const isCollapsed = g.id !== 'glucose' && collapsed.has(g.id);
+      {/* 棋盘网格卡片 */}
+      <div className="board">
+        {TILES.map((t) => {
+          const done = tileDone(t);
+          const Icon = t.icon;
+          const rowOfExpanded =
+            expanded && t.rows ? t.rows.find((r) => r.kind === expanded.kind && r.slot === expanded.slot) : undefined;
+          const singleExpanded =
+            expanded && t.single && t.single.kind === expanded.kind && t.single.slot === expanded.slot;
           return (
-            <section className="group" key={g.id}>
-              <button
-                className="group-header"
-                onClick={() => toggleGroup(g.id)}
-                aria-expanded={!isCollapsed}
-              >
-                <span>{g.label}</span>
-                <span className="summary">{isCollapsed ? groupSummary(g.id) : ''}</span>
-              </button>
-              {!isCollapsed && (
-                <GroupRows group={g} summarize={summarize} onOpen={openSlot} wide={false} />
-              )}
-            </section>
-          );
-        })
-      )}
+            <div key={t.id} className="tile" style={{ background: t.color }}>
+              <div className="tile-head">
+                <span className="tile-icon">
+                  <Icon size={44} />
+                </span>
+                <span className="tile-label">{t.label}</span>
+                {done ? <DoneCheck /> : <span className="tile-todo">未记</span>}
+              </div>
 
-      <p className="hint" style={{ marginTop: '0.8rem' }}>
-        点击任意项目即可填写；同一时点可“再记一次”；未填其他项目不影响保存。月纪要在
-        <button className="btn ghost" style={{ minHeight: 32, padding: '0 0.4rem', marginLeft: 4 }} onClick={onGotoHistory}>
+              {t.rows && (
+                <div className="tile-rows">
+                  {t.rows.map((r) => {
+                    const s = summaryOf(r);
+                    const isOpen = rowOfExpanded?.slot === r.slot;
+                    return (
+                      <div key={`${r.kind}:${r.slot}`} className="tile-row-wrap">
+                        <button
+                          className={s ? 'tile-row filled' : 'tile-row'}
+                          onClick={() =>
+                            setExpanded(
+                              isOpen
+                                ? null
+                                : { dateKey, kind: r.kind, slot: r.slot, entryId: null },
+                            )
+                          }
+                          aria-expanded={isOpen}
+                        >
+                          <span className="tile-row-label">{r.label}</span>
+                          <span className="tile-row-value">{s || '＋'}</span>
+                        </button>
+                        {isOpen && expanded && (
+                          <EntryForm
+                            target={expanded}
+                            records={records}
+                            units={units}
+                            variant="inline"
+                            onSave={saveAndCollapse}
+                            onDelete={onDelete}
+                            onSwitchTarget={setExpanded}
+                            onDone={() => setExpanded(null)}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {t.single && (
+                <div className="tile-body">
+                  {!singleExpanded && (
+                    <button
+                      className="btn big tile-open"
+                      onClick={() => setExpanded({ dateKey, kind: t.single!.kind, slot: t.single!.slot, entryId: null })}
+                    >
+                      <IconPen size={26} />
+                      {summaryOf(t.single) || '点这里填写'}
+                    </button>
+                  )}
+                  {singleExpanded && expanded && (
+                    <EntryForm
+                      target={expanded}
+                      records={records}
+                      units={units}
+                      variant="inline"
+                      onSave={saveAndCollapse}
+                      onDelete={onDelete}
+                      onSwitchTarget={setExpanded}
+                      onDone={() => setExpanded(null)}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="hint board-hint">
+        点卡片直接展开填写，不用跳转页面；血糖、血压、体重同一格可再记一次。月纪要在
+        <button className="btn small ghost" onClick={onGotoHistory}>
           回看 · 月表
         </button>
         中编辑。
       </p>
-      {lastSavedKey && <span hidden>{lastSavedKey}</span>}
     </div>
   );
 }
 
-type GroupDef = (typeof FIELD_GROUPS)[number];
-
-function GroupRows({
-  group,
-  summarize,
-  onOpen,
-  wide,
-}: {
-  group: GroupDef;
-  summarize: (kind: RecordKind, slot: string) => SlotSummary;
-  onOpen: (kind: RecordKind, slot: string) => void;
-  wide: boolean;
-}) {
-  return (
-    <>
-      {wide && (
-        <tr className="group-row">
-          <td colSpan={4}>{group.label}</td>
-        </tr>
-      )}
-      {group.slots.map((s) => {
-        const sum = summarize(s.kind, s.slot);
-        const valueNode = sum.count > 0 ? (
-          <span className="value">
-            {sum.text}
-            {s.multi && sum.count > 1 && <span className="count">共 {sum.count} 条</span>}
-          </span>
-        ) : (
-          <span className="fill-hint">填写</span>
-        );
-        return wide ? (
-          <tr key={`${s.kind}:${s.slot}`} className="data-row" onClick={() => onOpen(s.kind, s.slot)}>
-            <td>{group.label}</td>
-            <td>{s.label}</td>
-            <td>{sum.count > 0 ? valueNode : <span className="fill-hint">未记录</span>}</td>
-            <td>
-              <button className="btn secondary" style={{ minHeight: 40, padding: '0.2rem 0.7rem' }} onClick={(e) => { e.stopPropagation(); onOpen(s.kind, s.slot); }}>
-                {sum.count > 0 ? '查看' : '填写'}
-              </button>
-            </td>
-          </tr>
-        ) : (
-          <button key={`${s.kind}:${s.slot}`} className="slot-row" onClick={() => onOpen(s.kind, s.slot)}>
-            <span>{s.label}</span>
-            {valueNode}
-          </button>
-        );
-      })}
-    </>
-  );
+function weekdayShort(dateKey: string): string {
+  const dow = new Date(dateKey + 'T12:00:00').getDay();
+  return ['日', '一', '二', '三', '四', '五', '六'][dow]!;
 }

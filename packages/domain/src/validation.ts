@@ -18,7 +18,7 @@ export function formSpecFor(kind: RecordKind): FormSpecField[] {
       return [
         { key: 'value', label: '血糖值', type: 'decimal' },
         { key: 'unit', label: '单位', type: 'select', options: UNIT_OPTIONS.glucose },
-        { key: 'occurredAt', label: '实际测量时间（可空）', type: 'time' },
+        { key: 'occurredAt', label: '实际测量时间', type: 'time' },
         { key: 'note', label: '备注（可空）', type: 'text', required: false, multiline: true },
       ];
     case 'blood_pressure':

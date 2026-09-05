@@ -73,6 +73,9 @@ export function EntryForm({
       const hasUnit = formSpecFor(target.kind).some((s) => s.key === 'unit');
       if (hasUnit) f['unit'] = units[unitKey];
     }
+    // 实际测量时间默认当前时间（补记日则默认当天此刻），可手动清空
+    const hasTime = formSpecFor(target.kind).some((s) => s.key === 'occurredAt');
+    if (hasTime) f['occurredAt'] = defaultOccurredAt(target.dateKey);
     return f;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target.entryId]);
@@ -240,16 +243,16 @@ export function EntryForm({
 
   return (
     <div className="entry-form">
-      {variant === 'page' && (
-        <div className="editor-head">
-          <button className="btn ghost" onClick={onClose} aria-label="返回">
-            ‹ 返回
-          </button>
-          <span className="editor-title">
+      {variant === 'modal' && (
+        <div className="modal-head">
+          <span className="modal-title">
             {target.kind === 'month_note'
               ? `${monthKeyOf(target.dateKey)} · 本月纪要`
-              : `${formatDateCn(target.dateKey)} · ${slotDef?.label ?? target.slot}`}
+              : `${formatDateCn(target.dateKey)} · ${slotDef?.label ?? target.slot}${editingRecord ? ' · 修改' : ''}`}
           </span>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="关闭">
+            ✕
+          </button>
         </div>
       )}
       {formError && <div className="field-error" role="alert">{formError.message}</div>}
@@ -350,4 +353,11 @@ export function DoneCheck() {
       <IconCheck size={34} />
     </span>
   );
+}
+
+/** 测量时间默认值：所选日期 + 当前时分 */
+function defaultOccurredAt(dateKey: string): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return dateKey + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
 }

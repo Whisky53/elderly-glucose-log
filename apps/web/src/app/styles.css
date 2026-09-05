@@ -128,7 +128,13 @@ label { display: block; font-size: 0.95rem; font-weight: 700; color: var(--ink);
 }
 
 /* 棋盘卡片 */
-.board { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.8rem; }
+.board { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+/* 顶部区：血糖占 2/3 宽，血压+体重在右 1/3 列上下堆叠 */
+.board-top {
+  display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;
+  align-items: start; margin-bottom: 1rem;
+}
+.board-side { display: grid; gap: 1rem; align-content: start; }
 .tile {
   border: 3px solid var(--ink); border-radius: 1.3rem; padding: 0.8rem 0.85rem;
   display: flex; flex-direction: column; gap: 0.5rem;
@@ -176,6 +182,29 @@ label { display: block; font-size: 0.95rem; font-weight: 700; color: var(--ink);
   font-size: 1rem; font-weight: 700; z-index: 50; max-width: 90vw;
 }
 .toast.error { background: var(--danger); }
+
+/* 填写弹窗 */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(20, 20, 20, 0.55);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 4vh 1rem 2vh; z-index: 60; overflow-y: auto;
+}
+.modal-card {
+  background: var(--card); border: 3px solid var(--ink); border-radius: 1.3rem;
+  width: 100%; max-width: 34rem; padding: 1rem 1.1rem 1.2rem;
+  box-shadow: 0 10px 0 rgba(20, 20, 20, 0.18);
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 3px solid var(--ink);
+}
+.modal-title { font-size: 1.15rem; font-weight: 800; }
+.modal-close {
+  min-width: 56px; min-height: 56px; font-size: 1.5rem; font-weight: 800;
+  border: 3px solid var(--ink); border-radius: 0.9rem; background: #fdeaea;
+  color: var(--danger); cursor: pointer; font-family: inherit; line-height: 1;
+}
+.modal-close:not(:hover) { background: #fdeaea; }
 
 /* 回看 / 月表 */
 .detail-item { padding: 0.6rem 0.2rem; border-bottom: 2.5px solid var(--line-soft); display: flex; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; align-items: center; }

@@ -38,7 +38,22 @@ body {
   flex-wrap: wrap;
 }
 .app-header h1 { font-size: 1.3rem; margin: 0; font-weight: 800; letter-spacing: 0.05em; }
-.sync-status { font-size: 0.85rem; font-weight: 600; opacity: 0.85; }
+/* 顶栏同步状态：一句话说清存上了没有，点一下进设置 */
+.sync-status {
+  font-size: 0.85rem;
+  font-weight: 700;
+  opacity: 0.92;
+  background: transparent;
+  border: none;
+  color: #fff;
+  padding: 0;
+  margin: 0;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sync-status:focus-visible { outline: 3px solid #fff; outline-offset: 3px; border-radius: 4px; }
 
 main { flex: 1; padding: 0.9rem 0.8rem 6rem; }
 
@@ -241,6 +256,26 @@ label { display: block; font-size: 0.95rem; font-weight: 700; color: var(--ink);
 .radio-row input { width: 1.6rem; height: 1.6rem; min-height: 1.6rem; }
 
 .board-hint { margin-top: 1rem; }
+
+/* 登录页：字段少、字大、措辞直白；不登录也能继续用 */
+.login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem 0.9rem; }
+.login-card { width: 100%; max-width: 30rem; }
+.login-title { font-size: 1.35rem; }
+.login-actions { display: flex; flex-direction: column; gap: 0.7rem; margin-top: 1.1rem; }
+
+/* 同步区块里的待处理清单（冲突 / 校验未通过） */
+.sync-problem { margin-top: 1rem; border-top: 3px solid var(--ink); padding-top: 0.7rem; }
+.sync-problem-title { font-size: 1.02rem; font-weight: 800; margin: 0 0 0.3rem; }
+.sync-problem-item {
+  border: 2.5px solid var(--line-soft); border-radius: 0.7rem; background: #fff;
+  padding: 0.6rem 0.7rem; margin-bottom: 0.6rem;
+}
+.sync-problem-item .detail-main { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.sync-problem-item .editor-actions { margin-top: 0.5rem; }
+
+/* 改密码表单：与其它表单保持同一套大字与大热区 */
+.pw-form { margin-top: 1rem; border-top: 3px solid var(--ink); padding-top: 0.7rem; }
+.pw-form label { display: block; margin-top: 0.5rem; }
 
 @media (min-width: 700px) {
   .board { grid-template-columns: repeat(3, 1fr); }

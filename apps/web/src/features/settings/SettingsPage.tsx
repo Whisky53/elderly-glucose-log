@@ -1,3 +1,7 @@
+import type { LocalRecord } from '@gms/contracts';
+import type { OutboxEntry } from '../../data/local/repo';
+import type { SyncStatus } from '../../data/sync/engine';
+import { SyncSection } from '../sync/SyncSection';
 import type { Units } from '../../app/App';
 
 type Props = {
@@ -7,6 +11,17 @@ type Props = {
   onUnits: (u: Units) => void;
   onSeed: () => Promise<void>;
   onClear: () => Promise<void>;
+  syncStatus: SyncStatus;
+  syncEntries: OutboxEntry[];
+  records: LocalRecord[];
+  onLogin: () => void;
+  onLogout: () => void;
+  onSyncNow: () => void;
+  onFullResync: () => void;
+  onTakeLocal: (recordId: string) => void;
+  onTakeRemote: (recordId: string) => void;
+  onDiscard: (recordId: string) => void;
+  onChangePassword: (oldPassword: string, newPassword: string) => Promise<void>;
 };
 
 const FONT_OPTIONS = [
@@ -15,7 +30,25 @@ const FONT_OPTIONS = [
   { size: '26', label: '特大 26px' },
 ];
 
-export function SettingsPage({ fontSize, onFontSize, units, onUnits, onSeed, onClear }: Props) {
+export function SettingsPage({
+  fontSize,
+  onFontSize,
+  units,
+  onUnits,
+  onSeed,
+  onClear,
+  syncStatus,
+  syncEntries,
+  records,
+  onLogin,
+  onLogout,
+  onSyncNow,
+  onFullResync,
+  onTakeLocal,
+  onTakeRemote,
+  onDiscard,
+  onChangePassword,
+}: Props) {
   return (
     <div>
       <div className="card">
@@ -36,6 +69,20 @@ export function SettingsPage({ fontSize, onFontSize, units, onUnits, onSeed, onC
         ))}
         <p className="hint">更换字号不刷新页面，正在填写的内容不会丢失；本设备会记住选择。</p>
       </div>
+
+      <SyncSection
+        status={syncStatus}
+        entries={syncEntries}
+        records={records}
+        onLogin={onLogin}
+        onLogout={onLogout}
+        onSyncNow={onSyncNow}
+        onFullResync={onFullResync}
+        onTakeLocal={onTakeLocal}
+        onTakeRemote={onTakeRemote}
+        onDiscard={onDiscard}
+        onChangePassword={onChangePassword}
+      />
 
       <div className="card">
         <h2>单位配置 <span className="badge warn">待确认</span></h2>
@@ -60,23 +107,17 @@ export function SettingsPage({ fontSize, onFontSize, units, onUnits, onSeed, onC
       </div>
 
       <div className="card">
-        <h2>数据（演示与评审用）</h2>
+        <h2>数据</h2>
         <div className="editor-actions" style={{ marginTop: 0 }}>
           <button className="btn secondary" onClick={() => void onSeed()}>
             载入虚构示例数据
           </button>
           <button className="btn danger" onClick={() => void onClear()}>
-            清空本地数据
+            清空本机缓存
           </button>
         </div>
-        <p className="hint">示例数据全部为虚构，用于查看月表和趋势效果；正式使用前请清空。</p>
-      </div>
-
-      <div className="card">
-        <h2>账户</h2>
-        <p style={{ fontSize: '0.95rem' }}>
-          当前为本地开发版，数据仅存于此设备，未连接云端账户。云端登录（邀请开通、邮箱＋密码）与多端同步将在 S2
-          阶段接入，接入前不会假装已同步。
+        <p className="hint">
+          示例数据全部为虚构，用于查看月表和趋势效果，正式使用前请清空。清空本机缓存不会删除云端记录，下次同步会重新拉回。
         </p>
       </div>
 

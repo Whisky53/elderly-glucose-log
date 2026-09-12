@@ -1,0 +1,52 @@
+# 血糖记录同步服务 —— systemd 单元
+#
+# 由 systemd 托管，因此应用自身不做进程守护：
+#   - Restart=always  崩溃后自动拉起
+#   - 开机自启（enable 后生效）
+#
+# 安装位置：/etc/systemd/system/gms-api.service
+# 生效：systemctl daemon-reload && systemctl enable --now gms-api
+#
+# 注意：ExecStart 里的 node 绝对路径需要在服务器上确认（`which node`）。
+# 若用 nvm/源码安装，路径通常不是 /usr/bin/node，请按实际填写。
+
+[Unit]
+Description=GMS 血糖记录同步 API
+Documentation=file:/opt/gms/api/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gms
+Group=gms
+WorkingDirectory=/opt/gms/api
+
+Environment=NODE_ENV=production
+Environment=GMS_API_HOST=127.0.0.1
+Environment=GMS_API_PORT=8100
+Environment=GMS_DB_PATH=/var/lib/gms/gms.sqlite
+Environment=GMS_ADMIN_USER=admin
+# 密码不写在这里（避免进版本库）。首次启动若不设密码，服务会随机生成并打印一次到日志，
+# 用 `journalctl -u gms-api | grep 已创建初始账户` 取回，登录后立即在设置页改掉。
+EnvironmentFile=-/etc/gms-api.env
+
+ExecStart=/usr/bin/node dist/server.mjs
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+
+# 收紧权限：只允许写数据目录
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/gms
+
+# 日志走 journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gms-api
+
+[Install]
+WantedBy=multi-user.target

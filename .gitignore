@@ -3,3 +3,7 @@ dist/
 *.tsbuildinfo
 .DS_Store
 coverage/
+
+# 测试与构建临时文件
+apps/web/tests/.build/
+vite.config.ts.timestamp-*

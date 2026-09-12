@@ -1,0 +1,26 @@
+{
+  "name": "@gms/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "血糖管理 R1 同步 API（T07—T09）：零运行时依赖，Node 内置 http/sqlite/crypto",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && node scripts/bundle.mjs",
+    "dev": "node scripts/bundle.mjs && node dist/server.mjs",
+    "start": "node dist/server.mjs",
+    "smoke": "node tests/smoke.mjs"
+  },
+  "dependencies": {
+    "@gms/contracts": "workspace:*",
+    "@gms/domain": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "esbuild": "0.21.5",
+    "typescript": "5.6.3"
+  }
+}

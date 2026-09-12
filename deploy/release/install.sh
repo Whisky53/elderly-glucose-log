@@ -6,6 +6,7 @@
 #   /root/gms-release/web/           前端构建产物（apps/web/dist 的内容）
 #   /root/gms-release/api/server.mjs 后端单文件产物
 #   /root/gms-release/api/backup.mjs 备份脚本
+#   /root/gms-release/api/account.mjs 账户管理脚本（开通/重置账号）
 #   /root/gms-release/Caddyfile      站点配置（服务器已有 Caddy 时使用）
 #   /root/gms-release/nginx.conf     站点配置（无 Caddy 时使用）
 #   /root/gms-release/gms-api.service
@@ -99,6 +100,11 @@ log "分发应用文件"
 
 install -m 0755 -o root -g root "$RELEASE_DIR/api/server.mjs" "$APP_DIR/server.mjs"
 install -m 0755 -o root -g root "$RELEASE_DIR/api/backup.mjs" "$APP_DIR/backup.mjs"
+
+# 账户管理脚本（受控开通账号用；缺失时不阻塞部署）
+if [ -f "$RELEASE_DIR/api/account.mjs" ]; then
+  install -m 0755 -o root -g root "$RELEASE_DIR/api/account.mjs" "$APP_DIR/account.mjs"
+fi
 
 # 前端产物整体替换：先清空再拷贝，避免旧版本的 hashed 资源越积越多
 find "$WEB_DIR" -mindepth 1 -delete
@@ -198,6 +204,10 @@ cat <<EOF
 
   管理员账号    admin
   管理员密码    ${ADMIN_PW:-见 journalctl -u gms-api | grep 已创建初始账户}
+
+  开通家人账号  $NODE_BIN $APP_DIR/account.mjs create <用户名> <密码> --db $DATA_DIR/gms.sqlite
+  查看账号      $NODE_BIN $APP_DIR/account.mjs list --db $DATA_DIR/gms.sqlite
+  重置密码      $NODE_BIN $APP_DIR/account.mjs reset <用户名> <新密码> --db $DATA_DIR/gms.sqlite
 
 ⚠ 接下来还需处理：
   1) 在腾讯云控制台「安全组」放行 80 端口（以及后续 HTTPS 的 443）

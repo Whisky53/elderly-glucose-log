@@ -6,8 +6,14 @@
 #   /root/gms-release/web/           前端构建产物（apps/web/dist 的内容）
 #   /root/gms-release/api/server.mjs 后端单文件产物
 #   /root/gms-release/api/backup.mjs 备份脚本
-#   /root/gms-release/nginx.conf
+#   /root/gms-release/Caddyfile      站点配置（服务器已有 Caddy 时使用）
+#   /root/gms-release/nginx.conf     站点配置（无 Caddy 时使用）
 #   /root/gms-release/gms-api.service
+#
+# 最省事的取件方式：仓库是公开的，直接在服务器上拉取构建产物
+#   git clone --depth 1 https://github.com/Whisky53/elderly-glucose-log.git /tmp/gms-src
+#   bash /tmp/gms-src/deploy/release/install.sh
+# 构建产物在 macOS 上交叉生成即可，纯 JS 不含原生依赖，无需在服务器上重新构建。
 #
 # 幂等：可重复执行；已存在的目录/账号/服务会复用而不是报错。
 #
@@ -103,7 +109,7 @@ find "$WEB_DIR" -type f -exec chmod 0644 {} +
 
 # ---------- 5. systemd ----------
 log "安装 systemd 服务"
-sed -e "s#^ExecStart=.*#ExecStart=$NODE_BIN dist/server.mjs#" \
+sed -e "s#^ExecStart=.*#ExecStart=$NODE_BIN server.mjs#" \
     -e "s#^Environment=GMS_API_PORT=.*#Environment=GMS_API_PORT=$API_PORT#" \
     "$RELEASE_DIR/gms-api.service" > /etc/systemd/system/gms-api.service
 
@@ -133,22 +139,35 @@ for i in $(seq 1 20); do
   sleep 1
 done
 
-# ---------- 6. Nginx 站点 ----------
-log "配置 Nginx 站点"
-if [ -d /etc/nginx/conf.d ] && [ -f /etc/nginx/nginx.conf ] && grep -q "conf.d/\*.conf" /etc/nginx/nginx.conf; then
-  install -m 0644 "$RELEASE_DIR/nginx.conf" /etc/nginx/conf.d/gms.conf
-elif [ -d /etc/nginx/sites-available ]; then
-  install -m 0644 "$RELEASE_DIR/nginx.conf" /etc/nginx/sites-available/gms
-  ln -sfn /etc/nginx/sites-available/gms /etc/nginx/sites-enabled/gms
-  # Debian 默认站点会和我们的 server_name _ 抢 80 端口
-  [ -e /etc/nginx/sites-enabled/default ] && rm -f /etc/nginx/sites-enabled/default
+# ---------- 6. 站点配置 ----------
+log "配置站点（$WEB_SERVER）"
+if [ "$WEB_SERVER" = caddy ]; then
+  # 备份镜像自带的默认站点配置（只在首次执行时备份，避免覆盖掉回滚用的原版）
+  if [ -f /etc/caddy/Caddyfile ] && [ ! -f /etc/caddy/Caddyfile.orig.bak ]; then
+    cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.orig.bak
+  fi
+  sed -e "s#root \* .*#root * $WEB_DIR#" \
+      -e "s#reverse_proxy 127.0.0.1:[0-9]*#reverse_proxy 127.0.0.1:$API_PORT#" \
+      "$RELEASE_DIR/Caddyfile" > /etc/caddy/Caddyfile
+  chmod 0644 /etc/caddy/Caddyfile
+  caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1 || die "Caddy 配置校验失败"
+  systemctl enable caddy >/dev/null 2>&1 || true
+  systemctl reload caddy
 else
-  install -m 0644 "$RELEASE_DIR/nginx.conf" /etc/nginx/conf.d/gms.conf
+  if [ -d /etc/nginx/conf.d ] && [ -f /etc/nginx/nginx.conf ] && grep -q "conf.d/\*.conf" /etc/nginx/nginx.conf; then
+    install -m 0644 "$RELEASE_DIR/nginx.conf" /etc/nginx/conf.d/gms.conf
+  elif [ -d /etc/nginx/sites-available ]; then
+    install -m 0644 "$RELEASE_DIR/nginx.conf" /etc/nginx/sites-available/gms
+    ln -sfn /etc/nginx/sites-available/gms /etc/nginx/sites-enabled/gms
+    # Debian 默认站点会和我们的 server_name _ 抢 80 端口
+    [ -e /etc/nginx/sites-enabled/default ] && rm -f /etc/nginx/sites-enabled/default
+  else
+    install -m 0644 "$RELEASE_DIR/nginx.conf" /etc/nginx/conf.d/gms.conf
+  fi
+  nginx -t || die "Nginx 配置校验失败"
+  systemctl enable nginx >/dev/null 2>&1 || true
+  systemctl reload nginx 2>/dev/null || systemctl restart nginx
 fi
-
-nginx -t || die "Nginx 配置校验失败"
-systemctl enable nginx >/dev/null 2>&1 || true
-systemctl reload nginx 2>/dev/null || systemctl restart nginx
 
 # ---------- 7. 备份定时任务 ----------
 log "配置每日备份"

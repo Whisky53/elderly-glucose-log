@@ -31,7 +31,7 @@ Environment=GMS_ADMIN_USER=admin
 # 用 `journalctl -u gms-api | grep 已创建初始账户` 取回，登录后立即在设置页改掉。
 EnvironmentFile=-/etc/gms-api.env
 
-ExecStart=/usr/bin/node dist/server.mjs
+ExecStart=/usr/bin/node server.mjs
 Restart=always
 RestartSec=3
 TimeoutStopSec=15

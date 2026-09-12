@@ -1,0 +1,29 @@
+# 血糖记录应用 —— Caddy 站点配置
+#
+# 适用：服务器上已有 Caddy 监听 80（本项目的生产环境即是如此，比另装 Nginx 少一层）。
+# 安装位置：/etc/caddy/Caddyfile
+# 生效：caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
+#
+# 日后绑定域名：把下面的 `:80` 换成域名（如 `gms.example.com`），
+# 并在腾讯云安全组放行 443，Caddy 会自动申请并续期 Let's Encrypt 证书。
+
+:80 {
+	encode gzip
+
+	# API 反向代理：后端只监听 127.0.0.1:8100，不经公网暴露
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8100
+	}
+
+	# 运维探活
+	handle /healthz {
+		reverse_proxy 127.0.0.1:8100
+	}
+
+	# 前端静态资源 + SPA 回退（刷新任意子路径都回到 index.html）
+	handle {
+		root * /var/www/gms
+		try_files {path} /index.html
+		file_server
+	}
+}
